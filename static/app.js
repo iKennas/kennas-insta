@@ -6,9 +6,11 @@ const spinner = submitBtn.querySelector(".spinner");
 const statusEl = document.getElementById("status");
 
 const API_BASE = (window.APP_CONFIG?.API_BASE ?? "").replace(/\/$/, "");
-const IS_LOCAL =
-  location.hostname === "localhost" || location.hostname === "127.0.0.1";
-const NEEDS_API_CONFIG = !IS_LOCAL && !API_BASE;
+const USE_BACKEND = Boolean(API_BASE);
+
+const IS_IOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 const INSTAGRAM_PATTERN =
   /^https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p|tv)\/[\w-]+/i;
@@ -42,28 +44,72 @@ function filenameFromDisposition(header) {
   return "instagram_reel.mp4";
 }
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  clearStatus();
+function isCorsError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return (
+    err?.name === "TypeError" ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("cors")
+  );
+}
 
-  const url = urlInput.value.trim();
-  if (!INSTAGRAM_PATTERN.test(url.split("?")[0])) {
-    showStatus("Please paste a valid Instagram reel or post URL.", "error");
-    urlInput.focus();
-    return;
+function normalizeFilename(name) {
+  return name.endsWith(".mp4") ? name : `${name}.mp4`;
+}
+
+/**
+ * iPhone: opens share sheet with Save Video. Others: share if supported, else file download.
+ * @returns {'shared' | 'downloaded' | 'cancelled'}
+ */
+async function saveToDevice(blob, filename) {
+  const name = normalizeFilename(filename);
+  const file = new File([blob], name, { type: "video/mp4" });
+
+  const canShareFiles =
+    typeof navigator.share === "function" &&
+    (!navigator.canShare || navigator.canShare({ files: [file] }));
+
+  if (canShareFiles && (IS_IOS || navigator.canShare?.({ files: [file] }))) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: "Instagram Reel",
+      });
+      return "shared";
+    } catch (err) {
+      if (err?.name === "AbortError") return "cancelled";
+    }
   }
 
-  if (NEEDS_API_CONFIG) {
-    showStatus(
-      "Download server is not connected yet. Deploy the free API (see FREE-DEPLOY.md) and set API_BASE in config.js.",
-      "error"
-    );
-    return;
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = name;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+  return "downloaded";
+}
+
+function messageForSaveResult(result) {
+  if (result === "shared") {
+    return IS_IOS
+      ? "Share sheet opened — tap Save Video to add to Photos."
+      : "Share sheet opened — choose Save or Save to Files.";
   }
+  if (result === "cancelled") {
+    return "Cancelled. Tap Download again when you're ready.";
+  }
+  return IS_IOS
+    ? "Video ready — check Downloads, or try again for the share sheet."
+    : "Download started — check your Downloads folder.";
+}
 
-  setLoading(true);
-
-  try {
+async function fetchVideoBlob(url) {
+  if (USE_BACKEND) {
     const res = await fetch(apiUrl("/api/download"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -75,39 +121,53 @@ form.addEventListener("submit", async (e) => {
       try {
         const data = await res.json();
         if (data.detail) {
-          detail = typeof data.detail === "string" ? data.detail : data.detail[0]?.msg || detail;
+          detail =
+            typeof data.detail === "string" ? data.detail : data.detail[0]?.msg || detail;
         }
       } catch {
         /* ignore */
       }
-      showStatus(detail, "error");
-      return;
+      throw new Error(detail);
     }
 
     const blob = await res.blob();
     const name = filenameFromDisposition(res.headers.get("Content-Disposition"));
-    const objectUrl = URL.createObjectURL(blob);
+    return { blob, filename: name };
+  }
 
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = name.endsWith(".mp4") ? name : `${name}.mp4`;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(objectUrl);
+  if (!window.InstagramClient?.fetchVideoBlob) {
+    throw new Error("Client module failed to load.");
+  }
+  return window.InstagramClient.fetchVideoBlob(url);
+}
 
-    showStatus(
-      "Download started. On iPhone: open the file and tap Share → Save Video.",
-      "success"
-    );
-  } catch {
-    showStatus(
-      IS_LOCAL
-        ? "Network error. Is the server running? (run.bat)"
-        : "Network error. Check that the API is running and API_BASE in config.js is correct.",
-      "error"
-    );
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearStatus();
+
+  const url = urlInput.value.trim();
+  if (!INSTAGRAM_PATTERN.test(url.split("?")[0])) {
+    showStatus("Please paste a valid Instagram reel or post URL.", "error");
+    urlInput.focus();
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const { blob, filename } = await fetchVideoBlob(url);
+    const result = await saveToDevice(blob, filename);
+    const type = result === "cancelled" ? "error" : "success";
+    showStatus(messageForSaveResult(result), type);
+  } catch (err) {
+    if (!USE_BACKEND && isCorsError(err)) {
+      showStatus(
+        "Firebase-only mode is blocked by Instagram in the browser. Keep using the free Render API (already configured) or upgrade Firebase to Blaze for Functions.",
+        "error"
+      );
+      return;
+    }
+    showStatus(err?.message || "Download failed. Try again.", "error");
   } finally {
     setLoading(false);
   }
