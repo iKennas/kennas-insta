@@ -12,8 +12,17 @@
   --muted: #9b9ba8;
   --accent: #e1306c;
   --accent-2: #f77737;
+  --glow: rgba(225, 48, 108, 0.18);
+  --glow-2: rgba(247, 119, 55, 0.08);
   --radius: 16px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+body[data-platform="facebook"] {
+  --accent: #1877f2;
+  --accent-2: #42b0ff;
+  --glow: rgba(24, 119, 242, 0.22);
+  --glow-2: rgba(66, 176, 255, 0.1);
 }
 
 html {
@@ -36,9 +45,10 @@ body {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(225, 48, 108, 0.18), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 50%, rgba(247, 119, 55, 0.08), transparent),
+    radial-gradient(ellipse 80% 50% at 50% -20%, var(--glow), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 50%, var(--glow-2), transparent),
     var(--bg);
+  transition: background 0.35s ease;
 }
 
 .wrap {
@@ -53,9 +63,79 @@ body {
   margin-bottom: 2rem;
 }
 
+.hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .logo {
   display: inline-flex;
-  margin-bottom: 1rem;
+}
+
+.platform-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 48px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
+}
+
+.platform-toggle:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.platform-toggle:active {
+  transform: translateY(0);
+}
+
+.platform-toggle__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+}
+
+.platform-toggle__icon--left {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body[data-platform="facebook"] .platform-toggle__icon--left {
+  color: var(--muted);
+  background: transparent;
+}
+
+body[data-platform="facebook"] .platform-toggle__icon--right {
+  color: #fff;
+  background: var(--accent);
+}
+
+body[data-platform="instagram"] .platform-toggle__icon--right {
+  color: var(--muted);
+  background: transparent;
+}
+
+.platform-toggle__swap {
+  display: inline-flex;
+  color: var(--muted);
+  opacity: 0.9;
+}
+
+.platform-toggle__icon svg[hidden] {
+  display: none;
 }
 
 .hero h1 {
@@ -122,7 +202,7 @@ input[type="url"]::placeholder {
 
 input[type="url"]:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(225, 48, 108, 0.2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 button[type="submit"] {

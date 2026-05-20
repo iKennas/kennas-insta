@@ -4,6 +4,15 @@ const submitBtn = document.getElementById("submit");
 const btnLabel = submitBtn.querySelector(".btn-label");
 const spinner = submitBtn.querySelector(".spinner");
 const statusEl = document.getElementById("status");
+const platformToggle = document.getElementById("platform-toggle");
+const heroTitle = document.getElementById("hero-title");
+const heroSubtitle = document.getElementById("hero-subtitle");
+const urlLabel = document.getElementById("url-label");
+const urlHint = document.getElementById("url-hint");
+const featQuality = document.getElementById("feat-quality");
+const featIphone = document.getElementById("feat-iphone");
+const featSave = document.getElementById("feat-save");
+const heroLogo = document.getElementById("hero-logo");
 
 const API_BASE = (window.APP_CONFIG?.API_BASE ?? "").replace(/\/$/, "");
 const USE_BACKEND = Boolean(API_BASE);
@@ -14,6 +23,51 @@ const IS_IOS =
 
 const INSTAGRAM_PATTERN =
   /^https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p|tv)\/[\w-]+/i;
+
+const FACEBOOK_PATTERN =
+  /^https?:\/\/(?:(?:www\.|m\.|web\.)?facebook\.com\/.+|(?:www\.)?fb\.watch\/[\w-]+)/i;
+
+const PLATFORM_KEY = "kennas-platform";
+
+const COPY = {
+  instagram: {
+    title: "Instagram Reel Downloader",
+    subtitle:
+      "Paste a reel link. Get the highest-quality MP4 — ready for iPhone Photos and Files.",
+    label: "Instagram reel URL",
+    placeholder: "https://www.instagram.com/reel/...",
+    hint: 'Works with <code>/reel/</code>, <code>/reels/</code>, and post links that contain a reel.',
+    invalid: "Please paste a valid Instagram reel or post URL.",
+    toggleLabel: "Switch to Facebook",
+    featQuality: "Pulls the best available stream and merges to MP4 when needed.",
+    featIphone:
+      "H.264 video + AAC audio in an MP4 container — plays in Photos without converting.",
+    featSave: "Share sheet opens automatically — tap Save Video to add to Photos.",
+    shareTitle: "Instagram Reel",
+    defaultFile: "instagram_reel.mp4",
+  },
+  facebook: {
+    title: "Facebook Post Downloader",
+    subtitle:
+      "Paste a Facebook video or photo link. Save to iPhone Photos or Files in one tap.",
+    label: "Facebook post URL",
+    placeholder: "https://www.facebook.com/reel/... or fb.watch/...",
+    hint: 'Videos, reels, photos, and <code>fb.watch</code> short links are supported.',
+    invalid: "Please paste a valid Facebook post, reel, photo, or fb.watch link.",
+    toggleLabel: "Switch to Instagram",
+    featQuality: "Downloads the best available video or full-size image from the post.",
+    featIphone: "Videos save as MP4; photos save as JPG — both work with the iPhone share sheet.",
+    featSave:
+      "Share sheet opens automatically — tap Save Video or Save Image to add to Photos.",
+    shareTitle: "Facebook Post",
+    defaultFile: "facebook_post.mp4",
+  },
+};
+
+let activePlatform = localStorage.getItem(PLATFORM_KEY) || "instagram";
+if (activePlatform !== "instagram" && activePlatform !== "facebook") {
+  activePlatform = "instagram";
+}
 
 function apiUrl(path) {
   return `${API_BASE}${path}`;
@@ -37,11 +91,11 @@ function clearStatus() {
   statusEl.className = "status";
 }
 
-function filenameFromDisposition(header) {
-  if (!header) return "instagram_reel.mp4";
+function filenameFromDisposition(header, fallback) {
+  if (!header) return fallback;
   const match = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(header);
   if (match) return decodeURIComponent(match[1].replace(/["']/g, ""));
-  return "instagram_reel.mp4";
+  return fallback;
 }
 
 function isCorsError(err) {
@@ -54,17 +108,33 @@ function isCorsError(err) {
   );
 }
 
-function normalizeFilename(name) {
+function normalizeFilename(name, isImage) {
+  if (isImage) {
+    if (/\.(jpe?g|png|webp)$/i.test(name)) return name;
+    return name.endsWith(".") ? `${name}jpg` : `${name}.jpg`;
+  }
   return name.endsWith(".mp4") ? name : `${name}.mp4`;
 }
 
+function isImageFile(filename, blob) {
+  if (/\.(jpe?g|png|webp)$/i.test(filename)) return true;
+  return blob.type.startsWith("image/");
+}
+
 /**
- * iPhone: opens share sheet with Save Video. Others: share if supported, else file download.
+ * iPhone: opens share sheet (Save Video / Save Image). Others: share if supported, else download.
  * @returns {'shared' | 'downloaded' | 'cancelled'}
  */
-async function saveToDevice(blob, filename) {
-  const name = normalizeFilename(filename);
-  const file = new File([blob], name, { type: "video/mp4" });
+async function saveToDevice(blob, filename, platform) {
+  const image = isImageFile(filename, blob);
+  const name = normalizeFilename(filename, image);
+  const mime = image
+    ? blob.type && blob.type.startsWith("image/")
+      ? blob.type
+      : "image/jpeg"
+    : "video/mp4";
+  const file = new File([blob], name, { type: mime });
+  const copy = COPY[platform] || COPY.instagram;
 
   const canShareFiles =
     typeof navigator.share === "function" &&
@@ -74,7 +144,7 @@ async function saveToDevice(blob, filename) {
     try {
       await navigator.share({
         files: [file],
-        title: "Instagram Reel",
+        title: copy.shareTitle,
       });
       return "shared";
     } catch (err) {
@@ -94,26 +164,35 @@ async function saveToDevice(blob, filename) {
   return "downloaded";
 }
 
-function messageForSaveResult(result) {
+function messageForSaveResult(result, platform, filename) {
+  const image = isImageFile(filename, { type: "" });
   if (result === "shared") {
-    return IS_IOS
-      ? "Share sheet opened — tap Save Video to add to Photos."
+    if (IS_IOS) {
+      return image
+        ? "Share sheet opened — tap Save Image to add to Photos."
+        : "Share sheet opened — tap Save Video to add to Photos.";
+    }
+    return image
+      ? "Share sheet opened — choose Save or Save to Files."
       : "Share sheet opened — choose Save or Save to Files.";
   }
   if (result === "cancelled") {
     return "Cancelled. Tap Download again when you're ready.";
   }
-  return IS_IOS
-    ? "Video ready — check Downloads, or try again for the share sheet."
-    : "Download started — check your Downloads folder.";
+  if (IS_IOS) {
+    return image
+      ? "Photo ready — check Files, or try again for the share sheet."
+      : "Video ready — check Downloads, or try again for the share sheet.";
+  }
+  return "Download started — check your Downloads folder.";
 }
 
-async function fetchVideoBlob(url) {
+async function fetchMediaBlob(url, platform) {
   if (USE_BACKEND) {
     const res = await fetch(apiUrl("/api/download"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, platform }),
     });
 
     if (!res.ok) {
@@ -131,23 +210,77 @@ async function fetchVideoBlob(url) {
     }
 
     const blob = await res.blob();
-    const name = filenameFromDisposition(res.headers.get("Content-Disposition"));
+    const fallback = COPY[platform]?.defaultFile || "download.mp4";
+    const name = filenameFromDisposition(res.headers.get("Content-Disposition"), fallback);
     return { blob, filename: name };
   }
 
-  if (!window.InstagramClient?.fetchVideoBlob) {
-    throw new Error("Client module failed to load.");
+  if (platform === "instagram") {
+    if (!window.InstagramClient?.fetchVideoBlob) {
+      throw new Error("Client module failed to load.");
+    }
+    return window.InstagramClient.fetchVideoBlob(url);
   }
-  return window.InstagramClient.fetchVideoBlob(url);
+
+  throw new Error(
+    "Facebook downloads need the API server. Deploy the updated backend or use the hosted API."
+  );
 }
+
+function validateUrl(url, platform) {
+  const trimmed = url.trim();
+  const testUrl = platform === "instagram" ? trimmed.split("?")[0] : trimmed;
+  if (platform === "instagram") return INSTAGRAM_PATTERN.test(testUrl);
+  return FACEBOOK_PATTERN.test(testUrl);
+}
+
+function applyPlatformUI(platform) {
+  const copy = COPY[platform];
+  document.body.dataset.platform = platform;
+  heroTitle.textContent = copy.title;
+  heroSubtitle.textContent = copy.subtitle;
+  urlLabel.textContent = copy.label;
+  urlInput.placeholder = copy.placeholder;
+  urlHint.innerHTML = copy.hint;
+  featQuality.textContent = copy.featQuality;
+  featIphone.textContent = copy.featIphone;
+  featSave.textContent = copy.featSave;
+  platformToggle.setAttribute("aria-label", copy.toggleLabel);
+  document.title = copy.title;
+
+  const theme = document.querySelector('meta[name="theme-color"]');
+  if (theme) theme.content = platform === "facebook" ? "#0a0a12" : "#0a0a0f";
+
+  const showIg = platform === "instagram";
+  heroLogo.querySelector(".logo-ig").hidden = !showIg;
+  heroLogo.querySelector(".logo-fb").hidden = showIg;
+
+  if (urlInput.value.trim()) {
+    const valid = validateUrl(urlInput.value.trim(), platform);
+    if (!valid) urlInput.value = "";
+  }
+}
+
+function switchPlatform() {
+  activePlatform = activePlatform === "instagram" ? "facebook" : "instagram";
+  localStorage.setItem(PLATFORM_KEY, activePlatform);
+  applyPlatformUI(activePlatform);
+  clearStatus();
+  urlInput.focus();
+}
+
+platformToggle.addEventListener("click", switchPlatform);
+applyPlatformUI(activePlatform);
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   clearStatus();
 
   const url = urlInput.value.trim();
-  if (!INSTAGRAM_PATTERN.test(url.split("?")[0])) {
-    showStatus("Please paste a valid Instagram reel or post URL.", "error");
+  const copy = COPY[activePlatform];
+
+  if (!validateUrl(url, activePlatform)) {
+    showStatus(copy.invalid, "error");
     urlInput.focus();
     return;
   }
@@ -155,12 +288,12 @@ form.addEventListener("submit", async (e) => {
   setLoading(true);
 
   try {
-    const { blob, filename } = await fetchVideoBlob(url);
-    const result = await saveToDevice(blob, filename);
+    const { blob, filename } = await fetchMediaBlob(url, activePlatform);
+    const result = await saveToDevice(blob, filename, activePlatform);
     const type = result === "cancelled" ? "error" : "success";
-    showStatus(messageForSaveResult(result), type);
+    showStatus(messageForSaveResult(result, activePlatform, filename), type);
   } catch (err) {
-    if (!USE_BACKEND && isCorsError(err)) {
+    if (!USE_BACKEND && activePlatform === "instagram" && isCorsError(err)) {
       showStatus(
         "Firebase-only mode is blocked by Instagram in the browser. Keep using the free Render API (already configured) or upgrade Firebase to Blaze for Functions.",
         "error"

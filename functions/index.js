@@ -7,32 +7,41 @@ const os = require("os");
 const INSTAGRAM_RE =
   /^https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p|tv)\/[\w-]+/i;
 
+const FACEBOOK_RE =
+  /^https?:\/\/(?:(?:www\.|m\.|web\.)?facebook\.com\/.+|(?:www\.)?fb\.watch\/[\w-]+)/i;
+
 const FORMAT =
   "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/" +
   "bestvideo[ext=mp4]+bestaudio[ext=m4a]/" +
   "best[ext=mp4]/best";
 
-function normalizeUrl(url) {
+function normalizeUrl(url, platform) {
   let u = url.trim();
-  if (u.includes("?")) u = u.split("?")[0];
-  if (!u.endsWith("/")) u += "/";
-  return u.replace(/\/$/, "");
-}
-
-function validateUrl(url) {
-  const normalized = normalizeUrl(url);
-  if (!INSTAGRAM_RE.test(normalized)) {
-    return null;
+  if (platform === "instagram" && u.includes("?")) {
+    u = u.split("?")[0];
   }
-  return normalized;
+  if (u.endsWith("/") && !u.includes("?")) {
+    u = u.replace(/\/$/, "");
+  }
+  return u;
 }
 
-function safeFilename(name) {
-  const base = (name || "instagram_reel")
+function detectPlatform(url) {
+  const trimmed = url.trim();
+  const igNorm = normalizeUrl(trimmed, "instagram");
+  if (INSTAGRAM_RE.test(igNorm)) return { platform: "instagram", url: igNorm };
+  const fbNorm = normalizeUrl(trimmed, "facebook");
+  if (FACEBOOK_RE.test(fbNorm)) return { platform: "facebook", url: fbNorm };
+  return null;
+}
+
+function safeFilename(name, ext) {
+  const base = (name || "download")
     .replace(/[^\w\s-]/g, "")
     .trim()
     .slice(0, 60);
-  return `${base || "instagram_reel"}.mp4`;
+  const suffix = ext || ".mp4";
+  return `${base || "download"}${suffix}`;
 }
 
 exports.api = onRequest(
@@ -65,36 +74,57 @@ exports.api = onRequest(
       }
     }
 
-    const reelUrl = body?.url;
-    if (!reelUrl) {
+    const mediaUrl = body?.url;
+    const requestedPlatform = (body?.platform || "").toLowerCase();
+    if (!mediaUrl) {
       res.status(400).json({ detail: "Missing url in request body." });
       return;
     }
 
-    const validUrl = validateUrl(reelUrl);
-    if (!validUrl) {
+    const detected = detectPlatform(mediaUrl);
+    if (!detected) {
       res.status(400).json({
-        detail:
-          "Paste a valid Instagram reel or post link (instagram.com/reel/...).",
+        detail: "Paste a valid Instagram or Facebook link.",
       });
       return;
     }
+
+    if (requestedPlatform && requestedPlatform !== detected.platform) {
+      res.status(400).json({
+        detail: `This link is for ${detected.platform}, not ${requestedPlatform}.`,
+      });
+      return;
+    }
+
+    const { platform, url: validUrl } = detected;
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "reel-"));
     const outTemplate = path.join(tmpDir, "%(title).50B.%(ext)s");
 
     try {
-      await youtubedl(validUrl, {
+      const ytdlOpts = {
         noPlaylist: true,
         noWarnings: true,
-        format: FORMAT,
-        mergeOutputFormat: "mp4",
         output: outTemplate,
-      });
+      };
+
+      if (platform === "instagram") {
+        ytdlOpts.format = FORMAT;
+        ytdlOpts.mergeOutputFormat = "mp4";
+      } else {
+        ytdlOpts.format = "best";
+      }
+
+      await youtubedl(validUrl, ytdlOpts);
+
+      const exts =
+        platform === "facebook"
+          ? [".mp4", ".jpg", ".jpeg", ".png", ".webp"]
+          : [".mp4"];
 
       const files = fs
         .readdirSync(tmpDir)
-        .filter((f) => f.endsWith(".mp4"))
+        .filter((f) => exts.some((ext) => f.toLowerCase().endsWith(ext)))
         .map((f) => {
           const full = path.join(tmpDir, f);
           return { name: f, full, size: fs.statSync(full).size };
@@ -102,18 +132,30 @@ exports.api = onRequest(
         .sort((a, b) => b.size - a.size);
 
       if (!files.length) {
-        res.status(502).json({ detail: "No video file was produced." });
+        res.status(502).json({ detail: "No media file was produced." });
         return;
       }
 
-      const video = files[0];
-      const filename = safeFilename(path.basename(video.name, ".mp4"));
+      const media = files[0];
+      const ext = path.extname(media.name).toLowerCase() || ".mp4";
+      const mime =
+        ext === ".mp4"
+          ? "video/mp4"
+          : ext === ".png"
+            ? "image/png"
+            : ext === ".webp"
+              ? "image/webp"
+              : "image/jpeg";
+      const filename = safeFilename(
+        path.basename(media.name, ext),
+        ext
+      );
 
-      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Content-Type", mime);
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.setHeader("Cache-Control", "no-store");
 
-      const stream = fs.createReadStream(video.full);
+      const stream = fs.createReadStream(media.full);
       stream.pipe(res);
       stream.on("end", () => {
         try {
@@ -137,7 +179,7 @@ exports.api = onRequest(
         return;
       }
       res.status(502).json({
-        detail: msg.slice(-400) || "Could not fetch video from Instagram.",
+        detail: msg.slice(-400) || "Could not fetch media from the link.",
       });
       try {
         fs.rmSync(tmpDir, { recursive: true, force: true });
