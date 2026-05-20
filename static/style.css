@@ -282,6 +282,12 @@ button[type="submit"]:disabled {
   color: #86efac;
 }
 
+.status.loading {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+}
+
 .features {
   display: grid;
   gap: 1rem;

@@ -45,11 +45,13 @@ const COPY = {
     featSave: "Share sheet opens automatically — tap Save Video to add to Photos.",
     shareTitle: "Instagram Reel",
     defaultFile: "instagram_reel.mp4",
+    loading: "Fetching your reel…",
   },
   facebook: {
     title: "Facebook Post Downloader",
     subtitle:
       "Paste a Facebook video or photo link. Save to iPhone Photos or Files in one tap.",
+    loading: "Preparing your Facebook video… this can take up to a minute. Please wait.",
     label: "Facebook post URL",
     placeholder: "https://www.facebook.com/reel/... or fb.watch/...",
     hint: 'Videos, reels, photos, and <code>fb.watch</code> short links are supported.',
@@ -73,10 +75,15 @@ function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
 
-function setLoading(loading) {
+function setLoading(loading, statusMessage) {
   submitBtn.disabled = loading;
   btnLabel.hidden = loading;
   spinner.hidden = !loading;
+  if (loading && statusMessage) {
+    showStatus(statusMessage, "loading");
+  } else if (!loading) {
+    /* caller may show success/error after */
+  }
 }
 
 function showStatus(message, type) {
@@ -189,11 +196,15 @@ function messageForSaveResult(result, platform, filename) {
 
 async function fetchMediaBlob(url, platform) {
   if (USE_BACKEND) {
-    const res = await fetch(apiUrl("/api/download"), {
+    const fetchOpts = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, platform }),
-    });
+    };
+    if (typeof AbortSignal?.timeout === "function") {
+      fetchOpts.signal = AbortSignal.timeout(platform === "facebook" ? 180000 : 120000);
+    }
+    const res = await fetch(apiUrl("/api/download"), fetchOpts);
 
     if (!res.ok) {
       let detail = "Download failed. Try again.";
@@ -212,6 +223,20 @@ async function fetchMediaBlob(url, platform) {
     const blob = await res.blob();
     const fallback = COPY[platform]?.defaultFile || "download.mp4";
     const name = filenameFromDisposition(res.headers.get("Content-Disposition"), fallback);
+
+    if (platform === "facebook" && !isImageFile(name, blob)) {
+      const buf = await blob.slice(0, 12).arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const ftyp =
+        bytes.length >= 8 &&
+        String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]) === "ftyp";
+      if (!ftyp) {
+        throw new Error(
+          "Downloaded file is not a valid video. Try again or use a different public link."
+        );
+      }
+    }
+
     return { blob, filename: name };
   }
 
@@ -285,7 +310,7 @@ form.addEventListener("submit", async (e) => {
     return;
   }
 
-  setLoading(true);
+  setLoading(true, copy.loading);
 
   try {
     const { blob, filename } = await fetchMediaBlob(url, activePlatform);

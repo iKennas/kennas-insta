@@ -2,14 +2,20 @@ import re
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.facebook import resolve_media_url as resolve_facebook_media
+from app.facebook import prepare_facebook_media
 from app.instagram import resolve_video_url
+
+USER_AGENT_FB = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+    "Mobile/15E148 Safari/604.1"
+)
 
 INSTAGRAM_RE = re.compile(
     r"^https?://(?:www\.)?instagram\.com/(?:reel|reels|p|tv)/[\w-]+",
@@ -94,7 +100,7 @@ def validate_url(url: str, platform: str) -> str:
 
 
 @app.post("/api/download")
-async def download_media(body: DownloadRequest):
+async def download_media(body: DownloadRequest, background_tasks: BackgroundTasks):
     platform = (body.platform or "").strip().lower() or detect_platform(body.url)
     if platform not in ("instagram", "facebook"):
         raise HTTPException(
@@ -104,12 +110,18 @@ async def download_media(body: DownloadRequest):
 
     url = validate_url(body.url, platform)
 
+    fb_media = None
+    media_url = None
+
     try:
         if platform == "instagram":
             media_url, stem = await resolve_video_url(url)
             kind = "video"
         else:
-            media_url, stem, kind = await resolve_facebook_media(url)
+            fb_media = await prepare_facebook_media(url)
+            stem = fb_media.stem
+            kind = fb_media.kind
+            media_url = fb_media.remote_url
     except ValueError as e:
         msg = str(e)
         if "private" in msg.lower() or "login" in msg.lower():
@@ -123,18 +135,31 @@ async def download_media(body: DownloadRequest):
         ) from e
 
     safe_stem = re.sub(r"[^\w\s-]", "", stem).strip() or f"{platform}_media"
-    ext = ".mp4" if kind == "video" else _ext_from_url(media_url)
+    ext = ".mp4" if kind == "video" else _ext_from_url(media_url or "")
     filename = f"{safe_stem}{ext}"
     media_type = "video/mp4" if kind == "video" else _mime_for_ext(ext)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store",
+        "X-Media-Kind": kind,
+    }
+
+    # Facebook video: serve merged local MP4 (prevents corrupt streams)
+    if platform == "facebook" and fb_media and fb_media.local_path:
+        path = fb_media.local_path
+        background_tasks.add_task(fb_media.cleanup)
+        return FileResponse(
+            path,
+            media_type="video/mp4",
+            filename=filename,
+            headers=headers,
+        )
+
+    if not media_url:
+        raise HTTPException(status_code=502, detail="No media URL resolved.")
 
     async def stream_media():
-        fetch_headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
-                "Mobile/15E148 Safari/604.1"
-            ),
-        }
+        fetch_headers = {"User-Agent": USER_AGENT_FB}
         if platform == "facebook":
             fetch_headers["Referer"] = "https://www.facebook.com/"
 
@@ -149,11 +174,7 @@ async def download_media(body: DownloadRequest):
     return StreamingResponse(
         stream_media(),
         media_type=media_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Cache-Control": "no-store",
-            "X-Media-Kind": kind,
-        },
+        headers=headers,
     )
 
 
