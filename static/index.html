@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="no" />
   <meta name="theme-color" content="#0a0a0f" />
   <title>Reel Downloader</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -96,6 +96,23 @@
     </form>
 
     <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+
+    <div id="ios-save" class="ios-save" hidden aria-modal="true" role="dialog" aria-labelledby="ios-save-title">
+      <div class="ios-save__backdrop" data-close></div>
+      <div class="ios-save__panel">
+        <h2 id="ios-save-title">Save to Photos</h2>
+        <p class="ios-save__lead" id="ios-save-lead"></p>
+        <div id="ios-save-preview" class="ios-save__preview"></div>
+        <ol class="ios-save__steps">
+          <li>Tap the blue <strong>Save to Photos</strong> button below.</li>
+          <li>In the menu, scroll down and tap <strong>Save Video</strong> or <strong>Save Image</strong>.</li>
+          <li>Do <strong>not</strong> tap Add to Home Screen, Install, or other apps.</li>
+        </ol>
+        <button type="button" class="ios-save__primary" id="ios-save-btn">Save to Photos</button>
+        <button type="button" class="ios-save__secondary" id="ios-save-open" hidden>Open video</button>
+        <button type="button" class="ios-save__ghost" data-close>Cancel</button>
+      </div>
+    </div>
 
     <section class="features">
       <article>

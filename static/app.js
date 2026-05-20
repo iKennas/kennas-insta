@@ -13,6 +13,11 @@ const featQuality = document.getElementById("feat-quality");
 const featIphone = document.getElementById("feat-iphone");
 const featSave = document.getElementById("feat-save");
 const heroLogo = document.getElementById("hero-logo");
+const iosSaveEl = document.getElementById("ios-save");
+const iosSavePreview = document.getElementById("ios-save-preview");
+const iosSaveLead = document.getElementById("ios-save-lead");
+const iosSaveBtn = document.getElementById("ios-save-btn");
+const iosSaveOpen = document.getElementById("ios-save-open");
 
 const API_BASE = (window.APP_CONFIG?.API_BASE ?? "").replace(/\/$/, "");
 const USE_BACKEND = Boolean(API_BASE);
@@ -29,6 +34,9 @@ const FACEBOOK_PATTERN =
 
 const PLATFORM_KEY = "kennas-platform";
 
+let iosSaveObjectUrl = null;
+let pendingIosSave = null;
+
 const COPY = {
   instagram: {
     title: "Instagram Reel Downloader",
@@ -42,7 +50,8 @@ const COPY = {
     featQuality: "Pulls the best available stream and merges to MP4 when needed.",
     featIphone:
       "H.264 video + AAC audio in an MP4 container — plays in Photos without converting.",
-    featSave: "Share sheet opens automatically — tap Save Video to add to Photos.",
+    featSave:
+      "After download, tap Save to Photos, then choose Save Video in the menu (not Install).",
     shareTitle: "Instagram Reel",
     defaultFile: "instagram_reel.mp4",
     loading: "Fetching your reel…",
@@ -60,7 +69,7 @@ const COPY = {
     featQuality: "Downloads the best available video or full-size image from the post.",
     featIphone: "Videos save as MP4; photos save as JPG — both work with the iPhone share sheet.",
     featSave:
-      "Share sheet opens automatically — tap Save Video or Save Image to add to Photos.",
+      "After download, tap Save to Photos, then choose Save Video or Save Image (not Install).",
     shareTitle: "Facebook Post",
     defaultFile: "facebook_post.mp4",
   },
@@ -81,8 +90,6 @@ function setLoading(loading, statusMessage) {
   spinner.hidden = !loading;
   if (loading && statusMessage) {
     showStatus(statusMessage, "loading");
-  } else if (!loading) {
-    /* caller may show success/error after */
   }
 }
 
@@ -128,11 +135,12 @@ function isImageFile(filename, blob) {
   return blob.type.startsWith("image/");
 }
 
-/**
- * iPhone: opens share sheet (Save Video / Save Image). Others: share if supported, else download.
- * @returns {'shared' | 'downloaded' | 'cancelled'}
- */
-async function saveToDevice(blob, filename, platform) {
+function makeTypedBlob(blob, mime) {
+  if (blob.type === mime) return blob;
+  return new Blob([blob], { type: mime });
+}
+
+function makeFile(blob, filename) {
   const image = isImageFile(filename, blob);
   const name = normalizeFilename(filename, image);
   const mime = image
@@ -140,26 +148,86 @@ async function saveToDevice(blob, filename, platform) {
       ? blob.type
       : "image/jpeg"
     : "video/mp4";
-  const file = new File([blob], name, { type: mime });
-  const copy = COPY[platform] || COPY.instagram;
+  return { file: new File([makeTypedBlob(blob, mime)], name, { type: mime }), name, image };
+}
 
+function revokeIosSaveUrl() {
+  if (iosSaveObjectUrl) {
+    URL.revokeObjectURL(iosSaveObjectUrl);
+    iosSaveObjectUrl = null;
+  }
+}
+
+function closeIosSave(result = "cancelled") {
+  if (pendingIosSave?.resolve) {
+    pendingIosSave.resolve(result);
+  }
+  iosSaveEl.hidden = true;
+  iosSavePreview.innerHTML = "";
+  pendingIosSave = null;
+  revokeIosSaveUrl();
+}
+
+iosSaveEl.querySelectorAll("[data-close]").forEach((el) => {
+  el.addEventListener("click", closeIosSave);
+});
+
+/**
+ * iPhone: show save panel so share runs on a real tap (gesture lost after async fetch).
+ * @returns {'shared' | 'downloaded' | 'cancelled' | 'pending'}
+ */
+function saveToDevice(blob, filename, platform) {
+  const { file, name, image } = makeFile(blob, filename);
+
+  if (!IS_IOS) {
+    return saveToDeviceDesktop(file, name);
+  }
+
+  return new Promise((resolve) => {
+    pendingIosSave = { file, name, image, platform, resolve };
+    revokeIosSaveUrl();
+    iosSaveObjectUrl = URL.createObjectURL(file);
+    iosSavePreview.innerHTML = "";
+
+    if (image) {
+      const img = document.createElement("img");
+      img.src = iosSaveObjectUrl;
+      img.alt = "Preview";
+      iosSavePreview.appendChild(img);
+      iosSaveLead.textContent = "Your photo is ready. Save it using the steps below.";
+      iosSaveOpen.hidden = true;
+    } else {
+      const video = document.createElement("video");
+      video.src = iosSaveObjectUrl;
+      video.controls = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      video.preload = "auto";
+      iosSavePreview.appendChild(video);
+      iosSaveLead.textContent = "Your video is ready. Use the steps below to add it to Photos.";
+      iosSaveOpen.hidden = false;
+    }
+
+    iosSaveEl.hidden = false;
+  });
+}
+
+async function saveToDeviceDesktop(file, name) {
   const canShareFiles =
     typeof navigator.share === "function" &&
     (!navigator.canShare || navigator.canShare({ files: [file] }));
 
-  if (canShareFiles && (IS_IOS || navigator.canShare?.({ files: [file] }))) {
+  if (canShareFiles && navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({
-        files: [file],
-        title: copy.shareTitle,
-      });
+      await navigator.share({ files: [file] });
       return "shared";
     } catch (err) {
       if (err?.name === "AbortError") return "cancelled";
     }
   }
 
-  const objectUrl = URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(file);
   const a = document.createElement("a");
   a.href = objectUrl;
   a.download = name;
@@ -171,25 +239,68 @@ async function saveToDevice(blob, filename, platform) {
   return "downloaded";
 }
 
+iosSaveBtn.addEventListener("click", async () => {
+  if (!pendingIosSave) return;
+
+  const { file, resolve } = pendingIosSave;
+
+  if (typeof navigator.share !== "function") {
+    showStatus("Sharing is not supported here. Try Open video instead.", "error");
+    return;
+  }
+
+  if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+    showStatus("This browser cannot share files. Try Open video instead.", "error");
+    return;
+  }
+
+  try {
+    await navigator.share({ files: [file] });
+    const done = pendingIosSave?.resolve;
+    pendingIosSave = null;
+    iosSaveEl.hidden = true;
+    iosSavePreview.innerHTML = "";
+    revokeIosSaveUrl();
+    if (done) done("shared");
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      showStatus("Cancelled. Tap Save to Photos when you are ready.", "error");
+      return;
+    }
+    showStatus(
+      err?.message || "Could not open share menu. Try Open video instead.",
+      "error"
+    );
+  }
+});
+
+iosSaveOpen.addEventListener("click", () => {
+  if (!iosSaveObjectUrl) return;
+  const opened = window.open(iosSaveObjectUrl, "_blank");
+  if (!opened) {
+    showStatus("Allow pop-ups, or use Save to Photos above.", "error");
+  } else {
+    showStatus(
+      "In the new tab: tap the Share icon, then Save Video.",
+      "loading"
+    );
+  }
+});
+
 function messageForSaveResult(result, platform, filename) {
   const image = isImageFile(filename, { type: "" });
-  if (result === "shared") {
-    if (IS_IOS) {
-      return image
-        ? "Share sheet opened — tap Save Image to add to Photos."
-        : "Share sheet opened — tap Save Video to add to Photos.";
-    }
+  if (result === "pending") {
     return image
-      ? "Share sheet opened — choose Save or Save to Files."
-      : "Share sheet opened — choose Save or Save to Files.";
+      ? "Ready — tap Save to Photos, then Save Image."
+      : "Ready — tap Save to Photos, then Save Video (not Install).";
+  }
+  if (result === "shared") {
+    return image
+      ? "If Photos did not update, open Photos app and check Recents."
+      : "If Photos did not update, open Photos app and check Recents.";
   }
   if (result === "cancelled") {
     return "Cancelled. Tap Download again when you're ready.";
-  }
-  if (IS_IOS) {
-    return image
-      ? "Photo ready — check Files, or try again for the share sheet."
-      : "Video ready — check Downloads, or try again for the share sheet.";
   }
   return "Download started — check your Downloads folder.";
 }
@@ -291,6 +402,7 @@ function switchPlatform() {
   localStorage.setItem(PLATFORM_KEY, activePlatform);
   applyPlatformUI(activePlatform);
   clearStatus();
+  closeIosSave();
   urlInput.focus();
 }
 
@@ -300,6 +412,7 @@ applyPlatformUI(activePlatform);
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   clearStatus();
+  closeIosSave();
 
   const url = urlInput.value.trim();
   const copy = COPY[activePlatform];
@@ -314,6 +427,8 @@ form.addEventListener("submit", async (e) => {
 
   try {
     const { blob, filename } = await fetchMediaBlob(url, activePlatform);
+    setLoading(false);
+
     const result = await saveToDevice(blob, filename, activePlatform);
     const type = result === "cancelled" ? "error" : "success";
     showStatus(messageForSaveResult(result, activePlatform, filename), type);
