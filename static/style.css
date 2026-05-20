@@ -67,12 +67,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
   margin-bottom: 1rem;
-}
-
-.logo {
-  display: inline-flex;
 }
 
 .platform-toggle {
@@ -288,109 +283,25 @@ button[type="submit"]:disabled {
   color: #93c5fd;
 }
 
-/* iPhone save sheet — share must run on a fresh tap, not after async download */
-.ios-save {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0 0 max(1rem, env(safe-area-inset-bottom));
-}
-
-.ios-save[hidden] {
-  display: none !important;
-}
-
-.ios-save__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.72);
-}
-
-.ios-save__panel {
-  position: relative;
-  width: min(440px, 100% - 1.5rem);
-  max-height: min(90dvh, 720px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 1.25rem;
-  background: #14141c;
-  border: 1px solid var(--border);
-  border-radius: 20px 20px 12px 12px;
-}
-
-.ios-save__panel h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.2rem;
-}
-
-.ios-save__lead {
-  margin: 0 0 1rem;
-  font-size: 0.9rem;
-  color: var(--muted);
-}
-
-.ios-save__preview {
-  margin-bottom: 1rem;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #000;
-}
-
-.ios-save__preview video,
-.ios-save__preview img {
-  display: block;
-  width: 100%;
-  max-height: 220px;
-  object-fit: contain;
-}
-
-.ios-save__steps {
-  margin: 0 0 1rem;
-  padding-left: 1.2rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.ios-save__steps strong {
-  color: var(--text);
-}
-
-.ios-save__primary,
-.ios-save__secondary,
-.ios-save__ghost {
+.save-again {
   display: block;
   width: 100%;
   min-height: 48px;
-  margin-bottom: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.85rem 1.5rem;
   font: inherit;
   font-weight: 600;
   font-size: 1rem;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border: none;
   border-radius: 12px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.ios-save__primary {
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  border: none;
-}
-
-.ios-save__secondary {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--border);
-}
-
-.ios-save__ghost {
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  margin-bottom: 0;
+.save-again[hidden] {
+  display: none !important;
 }
 
 .features {

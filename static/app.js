@@ -4,6 +4,7 @@ const submitBtn = document.getElementById("submit");
 const btnLabel = submitBtn.querySelector(".btn-label");
 const spinner = submitBtn.querySelector(".spinner");
 const statusEl = document.getElementById("status");
+const saveAgainBtn = document.getElementById("save-again");
 const platformToggle = document.getElementById("platform-toggle");
 const heroTitle = document.getElementById("hero-title");
 const heroSubtitle = document.getElementById("hero-subtitle");
@@ -12,12 +13,6 @@ const urlHint = document.getElementById("url-hint");
 const featQuality = document.getElementById("feat-quality");
 const featIphone = document.getElementById("feat-iphone");
 const featSave = document.getElementById("feat-save");
-const heroLogo = document.getElementById("hero-logo");
-const iosSaveEl = document.getElementById("ios-save");
-const iosSavePreview = document.getElementById("ios-save-preview");
-const iosSaveLead = document.getElementById("ios-save-lead");
-const iosSaveBtn = document.getElementById("ios-save-btn");
-const iosSaveOpen = document.getElementById("ios-save-open");
 
 const API_BASE = (window.APP_CONFIG?.API_BASE ?? "").replace(/\/$/, "");
 const USE_BACKEND = Boolean(API_BASE);
@@ -34,8 +29,8 @@ const FACEBOOK_PATTERN =
 
 const PLATFORM_KEY = "kennas-platform";
 
-let iosSaveObjectUrl = null;
-let pendingIosSave = null;
+/** Last fetched file — used when iOS needs a second tap to open the share sheet */
+let lastSave = null;
 
 const COPY = {
   instagram: {
@@ -50,8 +45,7 @@ const COPY = {
     featQuality: "Pulls the best available stream and merges to MP4 when needed.",
     featIphone:
       "H.264 video + AAC audio in an MP4 container — plays in Photos without converting.",
-    featSave:
-      "After download, tap Save to Photos, then choose Save Video in the menu (not Install).",
+    featSave: "Share sheet opens automatically — tap Save Video to add to Photos.",
     shareTitle: "Instagram Reel",
     defaultFile: "instagram_reel.mp4",
     loading: "Fetching your reel…",
@@ -67,10 +61,9 @@ const COPY = {
     invalid: "Please paste a valid Facebook post, reel, photo, or fb.watch link.",
     toggleLabel: "Switch to Instagram",
     featQuality: "Downloads the best available video or full-size image from the post.",
-    featIphone: "Videos save as MP4; photos save as JPG — both work with the iPhone share sheet.",
-    featSave:
-      "After download, tap Save to Photos, then choose Save Video or Save Image (not Install).",
-    shareTitle: "Facebook Post",
+    featIphone: "Same MP4 format as Instagram — works with the iPhone share sheet.",
+    featSave: "Share sheet opens automatically — tap Save Video to add to Photos.",
+    shareTitle: "Facebook Video",
     defaultFile: "facebook_post.mp4",
   },
 };
@@ -105,6 +98,11 @@ function clearStatus() {
   statusEl.className = "status";
 }
 
+function hideSaveAgain() {
+  saveAgainBtn.hidden = true;
+  lastSave = null;
+}
+
 function filenameFromDisposition(header, fallback) {
   if (!header) return fallback;
   const match = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(header);
@@ -135,12 +133,7 @@ function isImageFile(filename, blob) {
   return blob.type.startsWith("image/");
 }
 
-function makeTypedBlob(blob, mime) {
-  if (blob.type === mime) return blob;
-  return new Blob([blob], { type: mime });
-}
-
-function makeFile(blob, filename) {
+function buildFile(blob, filename) {
   const image = isImageFile(filename, blob);
   const name = normalizeFilename(filename, image);
   const mime = image
@@ -148,83 +141,55 @@ function makeFile(blob, filename) {
       ? blob.type
       : "image/jpeg"
     : "video/mp4";
-  return { file: new File([makeTypedBlob(blob, mime)], name, { type: mime }), name, image };
+  const typed =
+    blob.type === mime ? blob : new Blob([blob], { type: mime });
+  return {
+    file: new File([typed], name, { type: mime }),
+    name,
+    image,
+  };
 }
-
-function revokeIosSaveUrl() {
-  if (iosSaveObjectUrl) {
-    URL.revokeObjectURL(iosSaveObjectUrl);
-    iosSaveObjectUrl = null;
-  }
-}
-
-function closeIosSave(result = "cancelled") {
-  if (pendingIosSave?.resolve) {
-    pendingIosSave.resolve(result);
-  }
-  iosSaveEl.hidden = true;
-  iosSavePreview.innerHTML = "";
-  pendingIosSave = null;
-  revokeIosSaveUrl();
-}
-
-iosSaveEl.querySelectorAll("[data-close]").forEach((el) => {
-  el.addEventListener("click", closeIosSave);
-});
 
 /**
- * iPhone: show save panel so share runs on a real tap (gesture lost after async fetch).
- * @returns {'shared' | 'downloaded' | 'cancelled' | 'pending'}
+ * Same flow for Instagram and Facebook (Instagram-style share sheet).
+ * @returns {'shared' | 'downloaded' | 'cancelled' | 'needs_tap'}
  */
-function saveToDevice(blob, filename, platform) {
-  const { file, name, image } = makeFile(blob, filename);
+async function saveToDevice(blob, filename, platform) {
+  const { file, name, image } = buildFile(blob, filename);
+  const copy = COPY[platform] || COPY.instagram;
 
-  if (!IS_IOS) {
-    return saveToDeviceDesktop(file, name);
-  }
+  lastSave = { file, name, image, platform };
 
-  return new Promise((resolve) => {
-    pendingIosSave = { file, name, image, platform, resolve };
-    revokeIosSaveUrl();
-    iosSaveObjectUrl = URL.createObjectURL(file);
-    iosSavePreview.innerHTML = "";
-
-    if (image) {
-      const img = document.createElement("img");
-      img.src = iosSaveObjectUrl;
-      img.alt = "Preview";
-      iosSavePreview.appendChild(img);
-      iosSaveLead.textContent = "Your photo is ready. Save it using the steps below.";
-      iosSaveOpen.hidden = true;
-    } else {
-      const video = document.createElement("video");
-      video.src = iosSaveObjectUrl;
-      video.controls = true;
-      video.playsInline = true;
-      video.setAttribute("playsinline", "");
-      video.setAttribute("webkit-playsinline", "");
-      video.preload = "auto";
-      iosSavePreview.appendChild(video);
-      iosSaveLead.textContent = "Your video is ready. Use the steps below to add it to Photos.";
-      iosSaveOpen.hidden = false;
-    }
-
-    iosSaveEl.hidden = false;
-  });
-}
-
-async function saveToDeviceDesktop(file, name) {
   const canShareFiles =
     typeof navigator.share === "function" &&
     (!navigator.canShare || navigator.canShare({ files: [file] }));
 
-  if (canShareFiles && navigator.canShare?.({ files: [file] })) {
+  if (canShareFiles && (IS_IOS || navigator.canShare?.({ files: [file] }))) {
     try {
-      await navigator.share({ files: [file] });
+      await navigator.share({
+        files: [file],
+        title: copy.shareTitle,
+      });
+      hideSaveAgain();
       return "shared";
     } catch (err) {
-      if (err?.name === "AbortError") return "cancelled";
+      if (err?.name === "AbortError") {
+        if (IS_IOS) {
+          saveAgainBtn.hidden = false;
+          return "needs_tap";
+        }
+        return "cancelled";
+      }
+      if (IS_IOS) {
+        saveAgainBtn.hidden = false;
+        return "needs_tap";
+      }
     }
+  }
+
+  if (IS_IOS) {
+    saveAgainBtn.hidden = false;
+    return "needs_tap";
   }
 
   const objectUrl = URL.createObjectURL(file);
@@ -236,71 +201,51 @@ async function saveToDeviceDesktop(file, name) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+  hideSaveAgain();
   return "downloaded";
 }
 
-iosSaveBtn.addEventListener("click", async () => {
-  if (!pendingIosSave) return;
-
-  const { file, resolve } = pendingIosSave;
-
-  if (typeof navigator.share !== "function") {
-    showStatus("Sharing is not supported here. Try Open video instead.", "error");
-    return;
-  }
-
-  if (navigator.canShare && !navigator.canShare({ files: [file] })) {
-    showStatus("This browser cannot share files. Try Open video instead.", "error");
-    return;
-  }
-
+saveAgainBtn.addEventListener("click", async () => {
+  if (!lastSave) return;
+  const { file, platform } = lastSave;
+  const copy = COPY[platform] || COPY.instagram;
   try {
-    await navigator.share({ files: [file] });
-    const done = pendingIosSave?.resolve;
-    pendingIosSave = null;
-    iosSaveEl.hidden = true;
-    iosSavePreview.innerHTML = "";
-    revokeIosSaveUrl();
-    if (done) done("shared");
+    await navigator.share({ files: [file], title: copy.shareTitle });
+    hideSaveAgain();
+    showStatus(
+      IS_IOS
+        ? "Share sheet opened — tap Save Video to add to Photos."
+        : "Share sheet opened.",
+      "success"
+    );
   } catch (err) {
-    if (err?.name === "AbortError") {
-      showStatus("Cancelled. Tap Save to Photos when you are ready.", "error");
-      return;
+    if (err?.name !== "AbortError") {
+      showStatus(err?.message || "Could not open share menu.", "error");
     }
-    showStatus(
-      err?.message || "Could not open share menu. Try Open video instead.",
-      "error"
-    );
-  }
-});
-
-iosSaveOpen.addEventListener("click", () => {
-  if (!iosSaveObjectUrl) return;
-  const opened = window.open(iosSaveObjectUrl, "_blank");
-  if (!opened) {
-    showStatus("Allow pop-ups, or use Save to Photos above.", "error");
-  } else {
-    showStatus(
-      "In the new tab: tap the Share icon, then Save Video.",
-      "loading"
-    );
   }
 });
 
 function messageForSaveResult(result, platform, filename) {
   const image = isImageFile(filename, { type: "" });
-  if (result === "pending") {
+  if (result === "needs_tap") {
     return image
-      ? "Ready — tap Save to Photos, then Save Image."
-      : "Ready — tap Save to Photos, then Save Video (not Install).";
+      ? "Ready! Tap Save to Photos below, then choose Save Image."
+      : "Ready! Tap Save to Photos below, then choose Save Video.";
   }
   if (result === "shared") {
-    return image
-      ? "If Photos did not update, open Photos app and check Recents."
-      : "If Photos did not update, open Photos app and check Recents.";
+    return IS_IOS
+      ? image
+        ? "Share sheet opened — tap Save Image to add to Photos."
+        : "Share sheet opened — tap Save Video to add to Photos."
+      : "Share sheet opened — choose Save or Save to Files.";
   }
   if (result === "cancelled") {
     return "Cancelled. Tap Download again when you're ready.";
+  }
+  if (IS_IOS) {
+    return image
+      ? "Photo ready — check Files, or tap Save to Photos."
+      : "Video ready — check Downloads, or tap Save to Photos.";
   }
   return "Download started — check your Downloads folder.";
 }
@@ -331,21 +276,16 @@ async function fetchMediaBlob(url, platform) {
       throw new Error(detail);
     }
 
-    const blob = await res.blob();
+    const mediaKind = res.headers.get("X-Media-Kind") || "video";
+    let blob = await res.blob();
     const fallback = COPY[platform]?.defaultFile || "download.mp4";
     const name = filenameFromDisposition(res.headers.get("Content-Disposition"), fallback);
 
-    if (platform === "facebook" && !isImageFile(name, blob)) {
-      const buf = await blob.slice(0, 12).arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      const ftyp =
-        bytes.length >= 8 &&
-        String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]) === "ftyp";
-      if (!ftyp) {
-        throw new Error(
-          "Downloaded file is not a valid video. Try again or use a different public link."
-        );
-      }
+    if (mediaKind === "video" && !blob.type.startsWith("video/")) {
+      blob = new Blob([blob], { type: "video/mp4" });
+    }
+    if (mediaKind === "image" && !blob.type.startsWith("image/")) {
+      blob = new Blob([blob], { type: "image/jpeg" });
     }
 
     return { blob, filename: name };
@@ -358,9 +298,7 @@ async function fetchMediaBlob(url, platform) {
     return window.InstagramClient.fetchVideoBlob(url);
   }
 
-  throw new Error(
-    "Facebook downloads need the API server. Deploy the updated backend or use the hosted API."
-  );
+  throw new Error("Facebook downloads need the API server.");
 }
 
 function validateUrl(url, platform) {
@@ -387,10 +325,6 @@ function applyPlatformUI(platform) {
   const theme = document.querySelector('meta[name="theme-color"]');
   if (theme) theme.content = platform === "facebook" ? "#0a0a12" : "#0a0a0f";
 
-  const showIg = platform === "instagram";
-  heroLogo.querySelector(".logo-ig").hidden = !showIg;
-  heroLogo.querySelector(".logo-fb").hidden = showIg;
-
   if (urlInput.value.trim()) {
     const valid = validateUrl(urlInput.value.trim(), platform);
     if (!valid) urlInput.value = "";
@@ -402,7 +336,7 @@ function switchPlatform() {
   localStorage.setItem(PLATFORM_KEY, activePlatform);
   applyPlatformUI(activePlatform);
   clearStatus();
-  closeIosSave();
+  hideSaveAgain();
   urlInput.focus();
 }
 
@@ -412,7 +346,7 @@ applyPlatformUI(activePlatform);
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   clearStatus();
-  closeIosSave();
+  hideSaveAgain();
 
   const url = urlInput.value.trim();
   const copy = COPY[activePlatform];
@@ -427,10 +361,9 @@ form.addEventListener("submit", async (e) => {
 
   try {
     const { blob, filename } = await fetchMediaBlob(url, activePlatform);
-    setLoading(false);
-
     const result = await saveToDevice(blob, filename, activePlatform);
-    const type = result === "cancelled" ? "error" : "success";
+    const type =
+      result === "cancelled" ? "error" : result === "needs_tap" ? "success" : "success";
     showStatus(messageForSaveResult(result, activePlatform, filename), type);
   } catch (err) {
     if (!USE_BACKEND && activePlatform === "instagram" && isCorsError(err)) {
