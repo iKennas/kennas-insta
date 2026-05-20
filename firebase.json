@@ -1,0 +1,15 @@
+{
+  "hosting": [
+    {
+      "target": "kennas-insta",
+      "public": "static",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "headers": [
+        {
+          "source": "**/*.@(js|css)",
+          "headers": [{ "key": "Cache-Control", "value": "public,max-age=3600" }]
+        }
+      ]
+    }
+  ]
+}

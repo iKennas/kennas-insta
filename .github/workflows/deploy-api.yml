@@ -1,0 +1,27 @@
+# Optional: add RENDER_API_KEY + RENDER_SERVICE_ID as GitHub repo secrets to auto-deploy API.
+# Manual deploy: connect repo at https://dashboard.render.com (see FREE-DEPLOY.md)
+name: Deploy API to Render
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "Dockerfile"
+      - "requirements.txt"
+      - "render.yaml"
+
+jobs:
+  deploy:
+    if: ${{ secrets.RENDER_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger Render deploy
+        run: |
+          curl -fsS -X POST \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": false}'

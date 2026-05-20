@@ -1,0 +1,10 @@
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+README.md
+run.bat
+terminals
+*.mp4
+.firebase

@@ -1,0 +1,14 @@
+{
+  "name": "kennas-insta-functions",
+  "description": "Instagram reel download API",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.3.2",
+    "youtube-dl-exec": "^3.0.22"
+  },
+  "private": true
+}

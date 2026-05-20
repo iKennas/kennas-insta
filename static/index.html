@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <title>Reel Downloader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <div class="kennas-sign" aria-hidden="true">
+    <span class="kennas-sign__label">KENNAS</span>
+  </div>
+
+  <main class="wrap">
+    <header class="hero">
+      <div class="logo" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <rect x="4" y="4" width="32" height="32" rx="10" stroke="url(#g)" stroke-width="2"/>
+          <circle cx="20" cy="20" r="7" stroke="url(#g)" stroke-width="2"/>
+          <circle cx="29" cy="11" r="2" fill="url(#g)"/>
+          <defs>
+            <linearGradient id="g" x1="4" y1="4" x2="36" y2="36">
+              <stop stop-color="#f09433"/>
+              <stop offset=".25" stop-color="#e6683c"/>
+              <stop offset=".5" stop-color="#dc2743"/>
+              <stop offset=".75" stop-color="#cc2366"/>
+              <stop offset="1" stop-color="#bc1888"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h1>Instagram Reel Downloader</h1>
+      <p class="subtitle">Paste a reel link. Get the highest-quality MP4 — ready for iPhone Photos and Files.</p>
+    </header>
+
+    <form id="form" class="card" novalidate>
+      <label for="url">Instagram reel URL</label>
+      <div class="input-row">
+        <input
+          id="url"
+          name="url"
+          type="url"
+          inputmode="url"
+          autocomplete="off"
+          placeholder="https://www.instagram.com/reel/..."
+          required
+        />
+        <button type="submit" id="submit" aria-live="polite">
+          <span class="btn-label">Download</span>
+          <span class="spinner" hidden aria-hidden="true"></span>
+        </button>
+      </div>
+      <p class="hint">Works with <code>/reel/</code>, <code>/reels/</code>, and post links that contain a reel.</p>
+    </form>
+
+    <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+
+    <section class="features">
+      <article>
+        <h3>Highest quality</h3>
+        <p>Pulls the best available stream and merges to MP4 when needed.</p>
+      </article>
+      <article>
+        <h3>iPhone-ready</h3>
+        <p>H.264 video + AAC audio in an MP4 container — plays in Photos without converting.</p>
+      </article>
+      <article>
+        <h3>Save on iPhone</h3>
+        <p>After download, tap Share → Save Video, or open the file in Files.</p>
+      </article>
+    </section>
+  </main>
+
+  <footer>
+    <p class="kennas-credit">KENNAS</p>
+    <p>For personal use. Only download content you have rights to.</p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

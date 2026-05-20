@@ -1,0 +1,8 @@
+# Free Render web service — deploy at https://dashboard.render.com
+# After deploy, copy your service URL into static/config.js (API_BASE)
+services:
+  - type: web
+    name: kennas-insta-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health

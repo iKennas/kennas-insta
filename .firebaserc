@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "prototype-kennas"
+  },
+  "targets": {
+    "prototype-kennas": {
+      "hosting": {
+        "kennas-insta": ["kennas-insta"]
+      }
+    }
+  }
+}
