@@ -12,6 +12,8 @@ Downloads need the free API — pick **one** option:
 1. Open: **[Deploy to Render](https://render.com/deploy?repo=https://github.com/iKennas/kennas-insta)**
 2. Sign in with **GitHub** → approve access.
 3. Keep defaults (free plan, service name `kennas-insta-api`) → **Apply**.
+
+**If deploy failed:** open the Blueprint → **Syncs** → click the failed sync → read the error log. Then **Manual sync** after pulling the latest `main` (we use native Python, not Docker).
 4. Wait until status is **Live** (~5–10 min first build).
 5. Test: `https://kennas-insta-api.onrender.com/api/health` → `{"ok":true,...}`
 6. Redeploy Firebase (if you changed `config.js`):
