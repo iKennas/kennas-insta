@@ -70,7 +70,8 @@ async def download_reel(body: DownloadRequest):
             detail="Could not reach Instagram. Try again in a moment.",
         ) from e
 
-    filename = f"{re.sub(r'[^\w\s-]', '', stem).strip() or 'instagram_reel'}.mp4"
+    safe_stem = re.sub(r"[^\w\s-]", "", stem).strip() or "instagram_reel"
+    filename = f"{safe_stem}.mp4"
 
     async def stream_video():
         async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
