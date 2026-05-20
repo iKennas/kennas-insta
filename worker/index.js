@@ -6,16 +6,23 @@ const USER_AGENT =
 const SHORTCODE_RE =
   /instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(?:reel|reels|p|tv)\/([A-Za-z0-9-_]+)/i;
 
-const CORS = {
-  "Access-Control-Allow-Origin": "https://kennas-insta.web.app",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+function corsHeaders(request) {
+  const origin = request.headers.get("Origin") || "";
+  const allowed =
+    origin === "https://kennas-insta.web.app" ||
+    origin === "https://kennas-insta.firebaseapp.com" ||
+    origin.startsWith("http://localhost");
+  return {
+    "Access-Control-Allow-Origin": allowed ? origin : "https://kennas-insta.web.app",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+}
 
-function json(data, status = 200) {
+function json(data, status, request) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(request), "Content-Type": "application/json" },
   });
 }
 
@@ -55,11 +62,11 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: CORS });
+      return new Response(null, { headers: corsHeaders(request) });
     }
 
     if (url.pathname === "/api/health") {
-      return json({ ok: true, method: "graphql-worker" });
+      return json({ ok: true, method: "graphql-worker" }, 200, request);
     }
 
     if (url.pathname === "/api/download" && request.method === "POST") {
@@ -70,17 +77,17 @@ export default {
         if (!video.ok) throw new Error("Failed to fetch video bytes.");
 
         const headers = {
-          ...CORS,
+          ...corsHeaders(request),
           "Content-Type": "video/mp4",
           "Content-Disposition": `attachment; filename="${filename}"`,
           "Cache-Control": "no-store",
         };
         return new Response(video.body, { status: 200, headers });
       } catch (e) {
-        return json({ detail: e.message || "Download failed." }, 502);
+        return json({ detail: e.message || "Download failed." }, 502, request);
       }
     }
 
-    return json({ detail: "Not found" }, 404);
+    return json({ detail: "Not found" }, 404, request);
   },
 };
